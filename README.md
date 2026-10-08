@@ -21,7 +21,7 @@ Python 3.10 or newer, with no Python dependencies. Export probing additionally r
 ```sh
 python3 scripts/video_suite.py transcript examples/transcript.json
 python3 scripts/video_suite.py style examples/feedback.json
-python3 scripts/video_suite.py bindings /path/sources.json --verify-media
+python3 scripts/video_suite.py bindings /path/sources.json --project /path/to/project --verify-media
 python3 scripts/video_suite.py quality /path/export.mp4 --expected-ms 10000
 python3 -m unittest discover -s tests -v
 ```

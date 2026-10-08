@@ -4,6 +4,9 @@ import argparse
 import hashlib
 import json
 import math
+import os
+import stat
+from contextlib import contextmanager, ExitStack
 import pathlib
 import re
 import subprocess
@@ -11,7 +14,10 @@ import sys
 
 MAX_JSON_BYTES = 8 * 1024 * 1024
 MAX_WORDS = 100000
-ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$')
+MAX_SOURCES = 32
+MAX_DURATION_MS = 14400000
+MAX_MEDIA_BYTES = 100 * 1024**3
+ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$')
 
 class Invalid(ValueError):
     pass
@@ -20,24 +26,41 @@ def require(condition, message):
     if not condition:
         raise Invalid(message)
 
+def stamp(details):
+    return (details.st_dev, details.st_ino, details.st_size, details.st_mtime_ns, details.st_ctime_ns)
+
+@contextmanager
+def regular_fd(path, limit):
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        details = os.fstat(descriptor)
+        require(stat.S_ISREG(details.st_mode), 'input must be a regular file')
+        require(details.st_size <= limit, 'input exceeds byte limit')
+        yield descriptor
+    finally:
+        os.close(descriptor)
+
 def read_json(path):
-    p = pathlib.Path(path)
-    require(p.is_file(), f'missing file: {p}')
-    require(p.stat().st_size <= MAX_JSON_BYTES, 'JSON exceeds 8 MiB limit')
     def duplicate_safe(pairs):
         result = {}
         for key, value in pairs:
             require(key not in result, f'duplicate JSON key: {key}')
             result[key] = value
         return result
-    with p.open(encoding='utf-8') as stream:
-        value = json.load(stream, object_pairs_hook=duplicate_safe,
-                          parse_constant=lambda value: (_ for _ in ()).throw(Invalid(f'nonfinite JSON: {value}')))
+    with regular_fd(path, MAX_JSON_BYTES) as descriptor:
+        before = os.fstat(descriptor)
+        # fdopen keeps custody while the descriptor context owns closure.
+        with os.fdopen(descriptor, 'rb', closefd=False) as stream:
+            raw = stream.read(MAX_JSON_BYTES + 1)
+        require(len(raw) <= MAX_JSON_BYTES, 'JSON exceeds 8 MiB limit')
+        require(stamp(before) == stamp(os.fstat(descriptor)), 'JSON changed during read')
+    value = json.loads(raw, object_pairs_hook=duplicate_safe,
+                       parse_constant=lambda value: (_ for _ in ()).throw(Invalid(f'nonfinite JSON: {value}')))
     require(isinstance(value, dict), 'document must be an object')
     return value
 
 def integer(value, where):
-    require(type(value) is int and 0 <= value <= 86400000, f'{where} must be an integer millisecond time within 24 hours')
+    require(type(value) is int and 0 <= value <= MAX_DURATION_MS, f'{where} must be an integer millisecond time within 4 hours')
     return value
 
 def nonempty(value, where, limit=4096):
@@ -63,7 +86,7 @@ def schema(doc, expected):
 
 def validate_transcript(doc):
     schema(doc, 'idc.video-transcript/1')
-    sources = identified(records(doc.get('sources'), 'sources', 100), 'sources')
+    sources = identified(records(doc.get('sources'), 'sources', MAX_SOURCES), 'sources')
     require(bool(sources), 'at least one source is required')
     total_words = 0
     for ident, source in sources.items():
@@ -83,31 +106,76 @@ def validate_transcript(doc):
     return {'sources': len(sources), 'words': total_words, 'status': 'structurally-valid',
             'notVerified': ['transcription accuracy', 'speaker identity', 'capture synchronization']}
 
-def hash_file(path):
+def hash_fd(descriptor):
+    before = os.fstat(descriptor)
+    require(stat.S_ISREG(before.st_mode) and before.st_size <= MAX_MEDIA_BYTES, 'media must be a regular file under 100 GiB')
+    os.lseek(descriptor, 0, os.SEEK_SET)
     h = hashlib.sha256()
-    with path.open('rb') as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-            h.update(chunk)
-    return h.hexdigest()
+    total = 0
+    while True:
+        chunk = os.read(descriptor, min(1024 * 1024, MAX_MEDIA_BYTES + 1 - total))
+        if not chunk:
+            break
+        total += len(chunk)
+        require(total <= MAX_MEDIA_BYTES, 'media exceeds 100 GiB limit')
+        h.update(chunk)
+    after = os.fstat(descriptor)
+    require(stamp(before) == stamp(after) and total == after.st_size, 'media changed during hash')
+    return h.hexdigest(), stamp(after)
 
-def validate_bindings(doc, verify_media=False):
+def hash_file(path):
+    with regular_fd(path, MAX_MEDIA_BYTES) as descriptor:
+        digest, identity = hash_fd(descriptor)
+        with regular_fd(path, MAX_MEDIA_BYTES) as named:
+            require(stamp(os.fstat(named)) == identity, 'named media changed during hash')
+        return digest
+
+def relative_parts(value):
+    text = nonempty(value, 'localPath')
+    require(not text.startswith('/') and '\\' not in text and '\x00' not in text,
+            'localPath must be a safe project-relative path')
+    parts = text.split('/')
+    require(all(part not in ('', '.', '..') for part in parts), 'localPath contains unsafe components')
+    require(pathlib.PurePosixPath(text).suffix.lower() in ('.mp4', '.mov', '.m4v', '.mkv', '.webm'),
+            'binding must name a supported video container')
+    return parts
+
+@contextmanager
+def media_fd(project, parts):
+    with ExitStack() as stack:
+        directory = os.open(project, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        stack.callback(os.close, directory)
+        for part in parts[:-1]:
+            directory = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=directory)
+            stack.callback(os.close, directory)
+        descriptor = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory)
+        stack.callback(os.close, descriptor)
+        details = os.fstat(descriptor)
+        require(stat.S_ISREG(details.st_mode) and details.st_size <= MAX_MEDIA_BYTES,
+                'media must be a regular file under 100 GiB')
+        yield descriptor
+
+def validate_bindings(doc, verify_media=False, project=None):
     schema(doc, 'idc.video-bindings/1')
-    sources = records(doc.get('sources'), 'bindings.sources', 100)
+    sources = records(doc.get('sources'), 'bindings.sources', MAX_SOURCES)
     require(bool(sources), 'at least one binding is required')
+    require(not verify_media or project is not None, '--verify-media requires --project')
     seen = set()
     for record in sources:
         source = record.get('sourceId')
         require(isinstance(source, str) and ID.fullmatch(source) and source not in seen, 'invalid or duplicate source binding')
         seen.add(source)
-        path = pathlib.Path(nonempty(record.get('localPath'), 'localPath'))
-        require(path.is_absolute(), 'localPath must be absolute; never resolve against arbitrary working directory')
+        parts = relative_parts(record.get('localPath'))
         digest = record.get('sha256')
-        require(isinstance(digest, str) and re.fullmatch('[0-9a-f]{64}', digest), 'sha256 must contain 64 lowercase hexadecimal characters')
+        require(isinstance(digest, str) and re.fullmatch('[0-9a-fA-F]{64}', digest), 'sha256 must contain 64 hexadecimal characters')
         require(record.get('audioMode') in ('source', 'silent'), 'audioMode must be source or silent')
         if verify_media:
-            require(path.is_file() and not path.is_symlink(), f'media must be a regular, nonsymlink file: {path}')
-            require(path.stat().st_size <= 100 * 1024**3, 'individual media exceeds 100 GiB verification bound')
-            require(hash_file(path) == digest, f'source bytes changed: {source}')
+            with media_fd(project, parts) as descriptor:
+                actual, identity = hash_fd(descriptor)
+                require(actual == digest.lower(), f'source bytes changed: {source}')
+                # Rewalk components to bind the advertised name to inspected bytes.
+                with media_fd(project, parts) as named:
+                    require(stamp(os.fstat(named)) == identity, f'named media changed: {source}')
     return {'status': 'bytes-verified' if verify_media else 'structurally-valid', 'bindings': len(seen)}
 
 def compile_style(doc):
@@ -129,12 +197,17 @@ def compile_style(doc):
             'provenance': 'accepted reusable feedback only; no model inference or auto-acceptance'}
 
 def quality(path, expected_ms=None):
-    p = pathlib.Path(path).resolve()
-    require(p.is_file(), 'export must exist')
-    require(0 < p.stat().st_size <= 100 * 1024**3, 'export must be nonempty and at most 100 GiB')
-    completed = subprocess.run(['ffprobe', '-v', 'error', '-show_entries',
-        'format=duration:stream=codec_type,codec_name,width,height', '-of', 'json', str(p)],
-        capture_output=True, text=True, timeout=60, check=True)
+    p = pathlib.Path(path).absolute()
+    with regular_fd(p, MAX_MEDIA_BYTES) as descriptor:
+        digest, identity = hash_fd(descriptor)
+        require(os.fstat(descriptor).st_size > 0, 'export is empty')
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        completed = subprocess.run(['ffprobe', '-v', 'error', '-show_entries',
+            'format=duration:stream=codec_type,codec_name,width,height', '-of', 'json', f'/dev/fd/{descriptor}'],
+            pass_fds=(descriptor,), capture_output=True, text=True, timeout=60, check=True)
+        require(stamp(os.fstat(descriptor)) == identity, 'export changed during probe')
+        with regular_fd(p, MAX_MEDIA_BYTES) as named:
+            require(stamp(os.fstat(named)) == identity, 'named export changed during probe')
     require(len(completed.stdout) <= MAX_JSON_BYTES, 'ffprobe output exceeds limit')
     probe = json.loads(completed.stdout)
     duration = float(probe['format']['duration']) * 1000
@@ -144,8 +217,8 @@ def quality(path, expected_ms=None):
     require(all(stream.get('width', 0) > 0 and stream.get('height', 0) > 0 for stream in videos), 'invalid video dimensions')
     if expected_ms is not None:
         require(abs(duration - expected_ms) <= 100, 'export duration differs by more than 100 ms')
-    return {'schemaVersion': 'idc.video-quality/1', 'status': 'container-probed', 'path': str(p),
-            'sha256': hash_file(p), 'durationMs': round(duration), 'streams': probe['streams'],
+    return {'schemaVersion': 'idc.video-container-probe/1', 'status': 'container-probed', 'path': str(p),
+            'sha256': digest, 'durationMs': round(duration), 'streams': probe['streams'],
             'notVerified': ['full decode', 'lip sync', 'visual quality', 'captions accuracy', 'music absence', 'platform acceptance']}
 
 def main():
@@ -156,6 +229,7 @@ def main():
     binding = commands.add_parser('bindings')
     binding.add_argument('document')
     binding.add_argument('--verify-media', action='store_true')
+    binding.add_argument('--project', type=pathlib.Path)
     style = commands.add_parser('style')
     style.add_argument('feedback')
     quality_parser = commands.add_parser('quality')
@@ -166,7 +240,7 @@ def main():
         if args.command == 'transcript':
             result = validate_transcript(read_json(args.document))
         elif args.command == 'bindings':
-            result = validate_bindings(read_json(args.document), args.verify_media)
+            result = validate_bindings(read_json(args.document), args.verify_media, args.project)
         elif args.command == 'style':
             result = compile_style(read_json(args.feedback))
         else:

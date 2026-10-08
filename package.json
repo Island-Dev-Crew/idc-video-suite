@@ -12,6 +12,6 @@
     "transcript": "idc.video-transcript/1",
     "feedback": "idc.video-feedback/1",
     "style": "idc.video-style/1",
-    "quality": "idc.video-quality/1"
+    "quality": "idc.video-container-probe/1"
   }
 }

@@ -6,7 +6,8 @@
 4. The editor keeps its own canonical recipe parser. Use its actual CLI to prepare the proposed edit:
 
 ```text
-python3 story_edit.py prepare recipe.json --bindings sources.json --output out/new-story
+python3 story_edit.py check recipe.json
+python3 story_edit.py prepare recipe.json --bindings sources.json --project /path/to/project --output out/new-story
 ```
 
 This interface is the v2 integration target. Check the installed editor's help before running it. Preparation is not render completion. Follow its generated plan into the existing `production_preview.py preview` entry point with `--project` and `--render`; use the installed command's exact arguments. Do not claim recipe-to-render integration from a suite validation result.

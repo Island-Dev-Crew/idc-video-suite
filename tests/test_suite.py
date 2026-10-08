@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -56,25 +57,100 @@ class IntakeTests(unittest.TestCase):
         doc['sources'][0]['words'] = [{}] * (suite.MAX_WORDS+1)
         with self.assertRaises(suite.Invalid): suite.validate_transcript(doc)
 
+class BoundariesTests(unittest.TestCase):
+    def test_source_count_duration_and_id_boundaries(self):
+        doc = transcript()
+        doc['sources'][0]['id'] = 'a' * 100
+        doc['sources'][0]['durationMs'] = 14400000
+        suite.validate_transcript(doc)
+        for field, value in [('id','a'*101),('durationMs',14400001)]:
+            changed=copy.deepcopy(doc);changed['sources'][0][field]=value
+            with self.assertRaises(suite.Invalid): suite.validate_transcript(changed)
+        doc['sources']=[dict(doc['sources'][0],id=f'cam{i}') for i in range(32)]
+        suite.validate_transcript(doc)
+        doc['sources'].append(dict(doc['sources'][0],id='cam33'))
+        with self.assertRaises(suite.Invalid): suite.validate_transcript(doc)
+
+    def test_json_fifo_and_symlink_rejected_without_wait(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=pathlib.Path(tmp);actual=root/'input.json';actual.write_text('{}')
+            link=root/'link.json';link.symlink_to(actual)
+            fifo=root/'pipe.json';os.mkfifo(fifo)
+            for path in (link,fifo):
+                with self.assertRaises((OSError,suite.Invalid)): suite.read_json(path)
+
+    def test_json_read_detects_concurrent_growth(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p=pathlib.Path(tmp)/'input.json';p.write_text('{}')
+            original=suite.os.fstat
+            calls=0
+            def mutate(fd):
+                nonlocal calls
+                calls+=1
+                if calls==3: p.write_text('{"changed":true}')
+                return original(fd)
+            with patch.object(suite.os,'fstat',side_effect=mutate):
+                with self.assertRaises(suite.Invalid): suite.read_json(p)
+
 class BindingTests(unittest.TestCase):
     def test_exact_source_bytes(self):
         with tempfile.TemporaryDirectory() as tmp:
             p=pathlib.Path(tmp)/'camera.mp4';p.write_bytes(b'original')
-            doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':str(p),'sha256':hashlib.sha256(b'original').hexdigest(),'audioMode':'source'}]}
-            self.assertEqual(suite.validate_bindings(doc, True)['status'],'bytes-verified')
+            doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':p.name,'sha256':hashlib.sha256(b'original').hexdigest(),'audioMode':'source'}]}
+            self.assertEqual(suite.validate_bindings(doc, True, tmp)['status'],'bytes-verified')
             p.write_bytes(b'changed')
-            with self.assertRaises(suite.Invalid): suite.validate_bindings(doc, True)
+            with self.assertRaises(suite.Invalid): suite.validate_bindings(doc, True, tmp)
 
     def test_paths_and_modes_rejected(self):
-        doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':'relative.mp4','sha256':'a'*64,'audioMode':'source'}]}
+        doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':'/absolute.mp4','sha256':'a'*64,'audioMode':'source'}]}
         with self.assertRaises(suite.Invalid): suite.validate_bindings(doc)
-        doc['sources'][0]['localPath']='/unused/file.mp4'
+        doc['sources'][0]['localPath']='unused/file.mp4'
         doc['sources'][0]['audioMode']='music'
         with self.assertRaises(suite.Invalid): suite.validate_bindings(doc)
 
     def test_structural_result_never_claims_bytes_verified(self):
-        doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':'/unused/file.mp4','sha256':'a'*64,'audioMode':'silent'}]}
+        doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':'unused/file.mp4','sha256':'a'*64,'audioMode':'silent'}]}
         self.assertEqual(suite.validate_bindings(doc)['status'],'structurally-valid')
+
+    def test_project_required_and_unsafe_paths_rejected(self):
+        doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':'raw/a.mp4','sha256':'a'*64,'audioMode':'silent'}]}
+        with self.assertRaises(suite.Invalid): suite.validate_bindings(doc,True)
+        for path in ('/tmp/a.mp4','../a.mp4','raw/../a.mp4','raw//a.mp4','raw/./a.mp4','raw\\a.mp4','a.wav'):
+            doc['sources'][0]['localPath']=path
+            with self.subTest(path=path),self.assertRaises(suite.Invalid): suite.validate_bindings(doc)
+        doc['sources']=[dict(doc['sources'][0],sourceId=f'cam{i}',localPath='a.mp4') for i in range(33)]
+        with self.assertRaises(suite.Invalid): suite.validate_bindings(doc)
+
+    def test_symlink_components_and_fifo_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=pathlib.Path(tmp);(root/'raw').mkdir();actual=root/'raw/a.mp4';actual.write_bytes(b'original')
+            (root/'alias').symlink_to(root/'raw',target_is_directory=True)
+            (root/'raw/link.mp4').symlink_to(actual)
+            os.mkfifo(root/'raw/pipe.mp4')
+            doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':'a.mp4','sha256':hashlib.sha256(b'original').hexdigest(),'audioMode':'source'}]}
+            for path in ('alias/a.mp4','raw/link.mp4','raw/pipe.mp4'):
+                doc['sources'][0]['localPath']=path
+                with self.subTest(path=path),self.assertRaises((OSError,suite.Invalid)):
+                    suite.validate_bindings(doc,True,root)
+
+    def test_media_mutation_and_name_swap_rejected(self):
+        for mode in ('mutate','replace'):
+            with tempfile.TemporaryDirectory() as tmp:
+                root=pathlib.Path(tmp);p=root/'a.mp4';p.write_bytes(b'original')
+                doc={'schemaVersion':'idc.video-bindings/1','sources':[{'sourceId':'cam','localPath':'a.mp4','sha256':hashlib.sha256(b'original').hexdigest(),'audioMode':'source'}]}
+                original=suite.os.read
+                changed=False
+                def read(fd,n):
+                    nonlocal changed
+                    data=original(fd,n)
+                    if not changed:
+                        changed=True
+                        if mode=='mutate': p.write_bytes(b'changed')
+                        else:
+                            other=root/'swap.mp4';other.write_bytes(b'original');os.replace(other,p)
+                    return data
+                with patch.object(suite.os,'read',side_effect=read):
+                    with self.subTest(mode=mode),self.assertRaises(suite.Invalid): suite.validate_bindings(doc,True,root)
 
 class FeedbackTests(unittest.TestCase):
     def test_only_accepted_reusable_feedback_is_learned(self):
@@ -99,6 +175,7 @@ class QualityTests(unittest.TestCase):
             with patch.object(suite.subprocess,'run',return_value=result):
                 report=suite.quality(p,1000)
                 self.assertEqual(report['status'],'container-probed')
+                self.assertEqual(report['schemaVersion'],'idc.video-container-probe/1')
                 self.assertIn('music absence',report['notVerified'])
                 with self.assertRaises(suite.Invalid): suite.quality(p,2000)
 

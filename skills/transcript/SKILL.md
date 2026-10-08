@@ -11,7 +11,7 @@ Use the correction dictionary (for example Garnett/granite to Garnet when contex
 
 ```sh
 python3 scripts/video_suite.py transcript transcript-intake.json
-python3 scripts/video_suite.py bindings sources.json --verify-media
+python3 scripts/video_suite.py bindings sources.json --project /path/to/project --verify-media
 ```
 
 Run commands from the suite root. Every source keeps its own clock. Note missing/dropped words and observed alignment anchors separately; do not invent a uniform offset. This intake is not the final recipe. The editor's canonical normalization is authoritative for rendering.
