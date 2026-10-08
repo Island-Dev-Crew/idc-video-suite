@@ -1,14 +1,14 @@
+---
+name: ingest-broll
+description: "Catalog visual evidence and camera cutaways when an edit needs B-roll or sustained attention."
+---
+
 # ingest-broll
 
-Catalog B-roll against the spine in `keepers.json`.
+Map B-roll to story beats in the keeper plan. Prefer real terminal, product, room and screen captures; then alternate cameras; then approved stills. Keep source URL, capture date, local path, rights or use context and the exact claim illustrated. Browser retrieval proves what was captured, not that every claim is true.
 
-Prefer, in order:
-1. Real terminal / playground / site captures already in the tree
-2. Shop / garage / two-houses footage
-3. Approved stills from the lock
-4. Generated art — only if Jon says so, and only in lock colors
+Write `broll.catalog.json` with stable ID, path, source interval, beat, purpose, provenance, and usable/rejected/pending status. A-room and Omarchy screensaver views can sustain attention without covering every line with a face. Choose camera changes for a sentence or demonstration transition, not constant arbitrary cuts.
 
-Skip shaky, lime, subscribe-bug, and anything that cannot be named in one line.
+Generated illustration is optional if authorized. Separate it from product evidence. Preserve thumbnail-only art as thumbnail-only. Record unresolved capture and timing gaps so the editor can use a simpler truthful layout.
 
-## Output
-`broll.catalog.json` — path, in/out, beat it serves, reject reason if unused.
+Done when each planned insert has a traceable asset and purpose. Catalog review is advisory; the editor determines which B-roll schema fields are executable today.

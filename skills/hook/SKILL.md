@@ -1,21 +1,14 @@
+---
+name: hook
+description: "Create a short reviewable hook when establishing the visual style of a video or testing an opening."
+---
+
 # hook
 
-One still. One 8–10s clip. Colors and wordmark from the lock.
+Read the lock and exact approved copy. Build an 8–10 second representative hook in native Remotion by default, using real project imagery and typography. Match the story's first promise; avoid invented product claims. For documentary launches the owner can be visible and expressive; a face-free listen-along is a distinct format.
 
-## Still 16:9
-Void field. One object from `stills_preferred`.
-Typography is printed — exact approved strings only.
-Listen-alongs carry `LISTEN-ALONG · NON-OFFICIAL` bottom left.
-No faces, no extra words.
+Render the short hook before the whole master when a new style needs review. Keep wordmarks legible, text within safe areas, and brand art recognizable. Use restrained scale, parallax or glow where it serves the subject. Preserve approved thumbnail artwork separately from animated assets.
 
-## Motion
-Image-to-video from that still. Do not redesign the object.
-Locked camera, 3% push-in, core pulse once near 6.5s.
-Type is a frozen PNG. No crust, no sugar pour, no melted letters.
-End on the starting composition.
+Create portrait composition deliberately with its own readable hierarchy. Compare mobile-size stills and motion, including first/last frames. Capture timestamp feedback through [style-feedback](../style-feedback/SKILL.md). Alternative generators/renderers are optional, not installed capabilities implied by this package.
 
-## Vertical
-Rerun 9:16 from the still. Do not crop the landscape file.
-
-## Output
-`thumb-16x9.png` · `hook-16x9.mp4` · optional `hook-9x16.mp4`
+Done when the hook preview, still and applicable portrait version exist and the feedback state is recorded. Visual review is advisory; the quality seat probes actual exports.

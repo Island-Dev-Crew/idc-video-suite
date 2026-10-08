@@ -1,0 +1,3 @@
+interface:
+  display_name: "Quality Check"
+  short_description: "Inspect actual rendered exports and delivery copies"

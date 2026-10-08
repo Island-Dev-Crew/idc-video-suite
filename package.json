@@ -1,0 +1,17 @@
+{
+  "name": "idc-video-suite",
+  "version": "2.0.0",
+  "license": "MIT",
+  "description": "Local video editing skills with transcript, feedback and export evidence tools",
+  "repository": "https://github.com/Island-Dev-Crew/idc-video-suite",
+  "files": ["SKILL.md", "agents", "skills", "scripts", "references", "examples", "package.json", "README.md", "NOTICE.md", "LICENSE"],
+  "scripts": {"test": "python3 -m unittest discover -s tests -v"},
+  "contracts": {
+    "recipe": "idc.video-edit/2 (validated by editor story_edit.py)",
+    "bindings": "idc.video-bindings/1",
+    "transcript": "idc.video-transcript/1",
+    "feedback": "idc.video-feedback/1",
+    "style": "idc.video-style/1",
+    "quality": "idc.video-quality/1"
+  }
+}
