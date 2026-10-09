@@ -1,0 +1,3 @@
+interface:
+  display_name: "Style Feedback"
+  short_description: "Preserve timestamped owner feedback as reusable style rules"

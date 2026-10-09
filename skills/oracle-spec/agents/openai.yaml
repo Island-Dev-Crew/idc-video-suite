@@ -1,0 +1,3 @@
+interface:
+  display_name: "Oracle Spec"
+  short_description: "Write an inspectable edit specification"

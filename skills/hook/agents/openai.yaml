@@ -1,0 +1,3 @@
+interface:
+  display_name: "Hook"
+  short_description: "Create a short reviewable hook"

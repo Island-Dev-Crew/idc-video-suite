@@ -1,24 +1,14 @@
+---
+name: assemble
+description: "Finish a documentary or listen-along master when a reviewed edit is ready for a rendered preview or export."
+---
+
 # assemble
 
-One YouTube warehouse file. Optional grade using lock palette only (no BuildLoop LUT).
+Read the current spec and approved keepers. Follow the canonical editor's prepared plan into its renderer. Native Remotion remains the motion default; keep the continuous source voice and verified source mapping. Mix no background music or effects unless requested. Apply speed only at the agreed stage and preserve output transcript timing.
 
-```
-0–HOOK     hook video, silence
-HOOK–end   last frame frozen
-HOOK–end   audio_master (listen-along or voice cut)
-```
+For documentary masters render the selected camera and evidence cuts. For explicitly requested warehouse listen-alongs use the hook followed by a held composition and full essay audio; measure durations rather than copying a fixed hook delay. Never replace a documentary with that layout by default.
 
-```
-[hook_v]fps=2,format=yuv420p,tpad=stop_mode=clone:stop_duration=AUDIO_DUR[v]
-[audio]adelay=HOOK_MS|HOOK_MS[a]
-libx264 + aac, yuv420p, +faststart
-```
+Probe the rendered file and review sync near the beginning, middle, end and each known camera hiccup. Compare audio with the clean source; container timestamps alone cannot prove lip sync. Any direct audio remux must match the edited timeline and speed, not merely share a filename.
 
-Probe durations. Do not hardcode 8.064.
-Do not overlay speech on the motion.
-Do not upload this file to X.
-
-YouTube: AI-generated tag on when picture or audio is generated.
-
-## Output
-`WAREHOUSE.mp4`
+Use [quality-check](../quality-check/SKILL.md) for receipts. Done when the actual export exists, measured properties and remaining limits are recorded, and the user's requested preview/final review state is accurate. Publication is separate from delivery.
