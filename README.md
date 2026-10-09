@@ -1,6 +1,6 @@
-# IDC Video Suite 2
+# IDC Video Suite 2.1
 
-An installable local editing skills package for documentary stories, motion hooks, listen-alongs and platform cutdowns. Version 2 adds transcript intake checks, durable timestamp feedback, export evidence and a verified portable bundle. It preserves the source story and keeps no added music and native Remotion as defaults.
+An installable local editing skills package for documentary stories, motion hooks, listen-alongs and platform cutdowns. Version 2.1 routes every new edit through the editor's structured project initializer and adds a concrete Claude handoff. Version 2 introduced transcript intake checks, durable timestamp feedback, export evidence and a verified portable bundle. It preserves the source story and keeps no added music and native Remotion as defaults.
 
 ## Use
 
@@ -13,6 +13,16 @@ Keep the full story; make the launch cut a separate shorter edit.
 ```
 
 The conductor reads child skills explicitly. No claim is made that every harness discovers nested skills automatically. Every skill has frontmatter and a Codex metadata sidecar.
+
+## Start a new edit
+
+From the **video-editor checkout**:
+
+```sh
+python3 video_project.py init /absolute/path/to/new-project --title 'Project title'
+```
+
+The editor creates the source, brand, transcript, edit, preview and delivery folders plus project records and Claude/agent instructions. Existing destinations are refused; existing edits resume in place. This skills package routes the workflow and does not duplicate the initializer. Folders alone do not transcribe, synchronize cameras or activate external tools. See [project layout and handoff](references/editor-integration.md).
 
 ## Executable checks
 
@@ -31,7 +41,7 @@ These tools are deliberately narrow. They do not transcribe audio, render Remoti
 ## Package and install
 
 ```sh
-python3 scripts/package.py bundle /new/path/idc-video-suite-2.0.0.zip
+python3 scripts/package.py bundle /new/path/idc-video-suite-2.1.0.zip
 python3 scripts/package.py install /new/skill-root/idc-video-suite
 python3 scripts/package.py verify /new/skill-root/idc-video-suite
 ```

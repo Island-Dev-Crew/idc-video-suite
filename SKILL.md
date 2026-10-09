@@ -5,7 +5,7 @@ description: "Local video studio conductor for documentary edits, listen-alongs,
 
 # IDC Video Suite
 
-Read the project brief and lock first. Run only the requested seat or the requested pipeline. Existing user instructions and approvals carry forward; this package does not add a SHIP keyword. Seats are local responsibilities, not a requirement to launch subagents.
+For every new video edit, run **ingest-project** first to initialize a fresh structured workspace with the editor-owned `video_project.py init` command. For an existing edit, read its project brief and lock first; resume in place without reinitializing. Run only the requested seat or the requested pipeline. Existing user instructions and approvals carry forward; this package does not add a SHIP keyword. Seats are local responsibilities, not a requirement to launch subagents.
 
 Default documentary sequence: ingest-project → transcript → cut → ingest-broll → oracle-spec → hook → style-feedback → assemble → quality-check → cutdowns → quality-check. Preserve full-story and short-launch goals separately. `warehouse` selects the explicit listen-along layout. No added music is the default. Native Remotion is the default motion backend.
 
@@ -13,7 +13,7 @@ Load only the seat needed:
 
 | Condition | Seat |
 |---|---|
-| New project or changed media/brand assets | [ingest-project](skills/ingest-project/SKILL.md) |
+| New video edit, existing project handoff or changed media/brand assets | [ingest-project](skills/ingest-project/SKILL.md) |
 | Missing transcript, additional camera or capture hiccup | [transcript](skills/transcript/SKILL.md) |
 | Proposed keepers or story spine | [cut](skills/cut/SKILL.md) |
 | Evidence capture or attention through camera/B-roll changes | [ingest-broll](skills/ingest-broll/SKILL.md) |
